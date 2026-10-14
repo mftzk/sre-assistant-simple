@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,53 +28,82 @@ type toolArgs struct {
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
+// Execute translates the LLM tool call into an ordinary Go function call.
 func (d *DockerTools) Execute(ctx context.Context, caller string, restartAllowed bool, call agent.ToolCall) string {
-	result := func(output string, err error) string {
-		v := map[string]any{"ok": err == nil, "output": output}
-		if err != nil {
-			v["error"] = err.Error()
+	var output string
+	var err error
+
+	switch call.Function.Name {
+	case "docker_logs":
+		var args toolArgs
+		args, err = parseArguments(call.Function.Arguments)
+		if err == nil {
+			tail := 100
+			if args.Tail != nil {
+				tail = *args.Tail
+			}
+			output, err = d.Log(ctx, args.Container, tail)
 		}
-		b, _ := json.Marshal(v)
-		return string(b)
+
+	case "docker_restart":
+		// Reject unauthorized calls before reading model-supplied arguments.
+		if !d.Auth.CanRestart(caller, restartAllowed) {
+			err = fmt.Errorf("restart hanya untuk SRE dan permintaan restart eksplisit pada pesan saat ini")
+			break
+		}
+
+		var args toolArgs
+		args, err = parseArguments(call.Function.Arguments)
+		if err == nil {
+			if args.Tail != nil {
+				err = fmt.Errorf("restart tidak menerima tail")
+			} else {
+				output, err = d.Restart(ctx, caller, restartAllowed, args.Container)
+			}
+		}
+
+	default:
+		err = fmt.Errorf("tool tidak dikenal")
 	}
-	if call.Function.Name != "docker_logs" && call.Function.Name != "docker_restart" {
-		return result("", fmt.Errorf("tool tidak dikenal"))
+
+	result := toolResult{OK: err == nil, Output: output}
+	if err != nil {
+		result.Error = err.Error()
 	}
-	if call.Function.Name == "docker_restart" && !d.Auth.CanRestart(caller, restartAllowed) {
-		return result("", fmt.Errorf("restart hanya untuk SRE dan permintaan restart eksplisit pada pesan saat ini"))
-	}
+	encoded, _ := json.Marshal(result)
+	return string(encoded)
+}
+
+type toolResult struct {
+	OK     bool   `json:"ok"`
+	Output string `json:"output"`
+	Error  string `json:"error,omitempty"`
+}
+
+func parseArguments(arguments string) (toolArgs, error) {
 	var args toolArgs
-	dec := json.NewDecoder(strings.NewReader(call.Function.Arguments))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&args); err != nil {
-		return result("", fmt.Errorf("argumen tool tidak valid"))
+	decoder := json.NewDecoder(strings.NewReader(arguments))
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&args); err != nil {
+		return args, fmt.Errorf("argumen tool tidak valid")
 	}
-	if err := dec.Decode(new(any)); err != io.EOF {
-		return result("", fmt.Errorf("argumen tool harus satu objek JSON"))
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return args, fmt.Errorf("argumen tool harus satu objek JSON")
 	}
-	if !authz.ValidContainer(args.Container) || !d.Containers[args.Container] {
-		return result("", fmt.Errorf("container tidak diizinkan"))
-	}
-	command := "docker restart --timeout 10 -- " + shellQuote(args.Container)
-	if call.Function.Name == "docker_logs" {
-		tail := 100
-		if args.Tail != nil {
-			tail = *args.Tail
-		}
-		if tail < 1 || tail > 200 {
-			return result("", fmt.Errorf("tail harus 1 sampai 200"))
-		}
-		command = "docker logs --timestamps --tail " + strconv.Itoa(tail) + " -- " + shellQuote(args.Container)
-	} else if args.Tail != nil {
-		return result("", fmt.Errorf("restart tidak menerima tail"))
-	}
+	return args, nil
+}
+
+// runCommand applies the same SSH deadline to both operations.
+func (d *DockerTools) runCommand(ctx context.Context, command string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+
 	output, err := d.Exec.Run(ctx, command)
 	if ctx.Err() != nil {
-		err = fmt.Errorf("SSH timeout/canceled; hasil restart mungkin sudah terjadi, jangan ulang otomatis")
+		return output, fmt.Errorf("SSH timeout/canceled; hasil restart mungkin sudah terjadi, jangan ulang otomatis")
 	}
-	return result(output, err)
+	return output, err
 }
 
 // AllowedContainers gives the model names it may use without discovery.

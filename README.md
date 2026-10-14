@@ -92,6 +92,12 @@ docs/               panduan sharing session
 Mulai dari `internal/agent/harness.go` untuk membaca loop. Cek
 `internal/authz/authz.go` untuk authorization: harness memakai gate yang sama
 untuk memilih tool, dispatcher Docker mengeceknya lagi sebelum SSH.
+Tool Docker didefinisikan sebagai function biasa: `Log` di
+[internal/docker/log.go](internal/docker/log.go) dan `Restart` di
+[internal/docker/restart.go](internal/docker/restart.go). Masing-masing berisi
+validasi dan command Docker-nya sendiri. `Execute` di `internal/docker/tools.go`
+membaca JSON arguments, memilih function lewat `switch`, dan mengemas hasilnya.
+Schema LLM ditulis eksplisit di `internal/agent/tools.go`; tidak ada factory schema.
 Tests berada di samping package yang diuji. Root `main.go` adalah shim kecil
 agar command lama `go run .` tetap bekerja.
 

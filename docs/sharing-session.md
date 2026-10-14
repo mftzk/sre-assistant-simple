@@ -2,11 +2,13 @@
 
 1. Buka terminal bot agar peserta melihat trace `llm_round` dan `tool`.
 2. User biasa: `@sre-assistant-simple cek log demo-app, jelaskan warning-nya`.
-   Telusuri schema dan tool arguments di kode harness, hasil tool yang masuk ke
-   LLM, lalu jawaban berbasis log.
+   Telusuri schema di `internal/agent/tools.go`, routing di
+   `internal/docker/tools.go`, lalu function `Log` di `internal/docker/log.go`.
+   Tunjukkan hasil tool yang masuk ke LLM dan jawaban berbasis log.
 3. User biasa: `@sre-assistant-simple restart demo-app` → ditolak, tanpa SSH restart.
 4. User SRE: mention bot untuk cek log terlebih dahulu. Dalam thread yang sama,
    kirim `@sre-assistant-simple restart container tadi` → restart langsung.
+   Buka `internal/docker/restart.go` untuk menunjukkan cek SRE sebelum command SSH.
 5. Dalam thread itu: `@sre-assistant-simple cek log demo-app lagi` → timestamp
    startup baru terlihat. Warning contoh sengaja tetap muncul; restart bukan
    bukti bahwa masalah aplikasi sudah diperbaiki.
