@@ -25,13 +25,10 @@ langsung. Tidak perlu Docker di mesin bot, public HTTP endpoint, atau database.
 1. Buat Slack app dari [deploy/slack-manifest.yaml](deploy/slack-manifest.yaml), install ke
    workspace, dan ambil bot token `xoxb-...`. Buat app-level token `xapp-...`
    dengan scope `connections:write`. Invite bot ke channel demo.
-2. Pada server demo, salin [deploy/compose.demo.yaml](deploy/compose.demo.yaml), sebagai `compose.demo.yaml`, lalu jalankan:
-
-   ```bash
-   docker compose -f compose.demo.yaml up -d
-   docker logs --tail 10 demo-app
-   ```
-
+2. Pilih container yang sudah ada di server SSH dan masukkan nama persisnya ke
+   `DOCKER_ALLOWED_CONTAINERS`. Contoh dalam panduan memakai `demo-app`; ganti
+   dengan nama container di server kamu. Bot langsung mengakses server itu melalui
+   `SSH_HOST`, `SSH_USER`, dan `SSH_PRIVATE_KEY`.
 3. Siapkan SSH key khusus demo dan host key yang sudah diverifikasi di
    `~/.ssh/known_hosts`, atau file yang ditunjuk `SSH_KNOWN_HOSTS_FILE`.
    Untuk port nonstandar, entri host memakai bentuk `[host]:port`.
@@ -83,9 +80,9 @@ internal/
   config/           environment
   authz/            izin SRE, intent restart, validasi nama container
   agent/            LLM client, schema tool, loop harness
-  docker/           dispatcher tool dan SSH transport
+  docker/           tool Docker remote melalui SSH
   slackbot/         event Slack, balasan, memory session
-deploy/             manifest Slack dan Compose demo
+deploy/             manifest Slack
 docs/               panduan sharing session
 ```
 
@@ -151,9 +148,3 @@ go build -o bin/sre-assistant ./cmd/sre-assistant
 
 Test memakai HTTP LLM palsu, fake executor, dan server SSH loopback dengan key
 sementara. Tidak perlu credential Slack/LLM, Docker, atau akses server sungguhan.
-
-Hentikan demo dari server SSH:
-
-```bash
-docker compose -f compose.demo.yaml down
-```
