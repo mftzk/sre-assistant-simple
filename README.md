@@ -121,6 +121,9 @@ Default batas operasi:
 - Hanya exact container name dalam `DOCKER_ALLOWED_CONTAINERS`; daftar kosong
   menolak semua. `SRE_SLACK_USER_IDS` kosong menolak semua restart.
 - Log default 100 baris, maksimum 200 dan 32 KiB. Tidak ada follow log streaming.
+  SSH memakai `session.CombinedOutput()`, lalu memotong hasil ke 32 KiB sebelum
+  dikirim ke LLM. Seluruh output ditampung di memory sampai perintah selesai;
+  batas 32 KiB membatasi hasil, bukan memory saat pembacaan.
 - SSH/tool timeout 30 detik; handshake maksimum 10 detik. Host key wajib cocok.
 - Maksimum enam putaran tool, empat call per putaran, satu percobaan restart
   per container per pesan. Error/timeout tidak menyebabkan retry restart.

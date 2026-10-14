@@ -90,19 +90,3 @@ func TestEmptyAllowlistAndExecutionFailure(t *testing.T) {
 		t.Fatal(result)
 	}
 }
-func TestCappedOutputDrains(t *testing.T) {
-	w := &cappedOutput{}
-	p := []byte(strings.Repeat("x", outputLimit+100))
-	if n, err := w.Write(p); n != len(p) || err != nil {
-		t.Fatal(n, err)
-	}
-	_, _ = w.Write([]byte("later"))
-	if len(w.data) != outputLimit || !strings.HasSuffix(w.String(), "[output truncated at 32 KiB]") {
-		t.Fatal("output not bounded")
-	}
-	binary := &cappedOutput{}
-	_, _ = binary.Write([]byte{0xff, 0xfe, 'a'})
-	if got := binary.String(); len(got) > 3 || !strings.HasSuffix(got, "a") {
-		t.Fatal("invalid UTF-8 must not expand the output bound", got)
-	}
-}

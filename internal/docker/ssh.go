@@ -6,7 +6,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -16,35 +15,6 @@ import (
 )
 
 const outputLimit = 32 * 1024
-
-// A capped writer continues draining SSH output without growing memory.
-type cappedOutput struct {
-	mu        sync.Mutex
-	data      []byte
-	truncated bool
-}
-
-func (w *cappedOutput) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	n := len(p)
-	room := outputLimit - len(w.data)
-	if n > room {
-		w.truncated = true
-		p = p[:room]
-	}
-	w.data = append(w.data, p...)
-	return n, nil
-}
-func (w *cappedOutput) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	s := strings.ToValidUTF8(string(w.data), "?")
-	if w.truncated {
-		s += "\n[output truncated at 32 KiB]"
-	}
-	return s
-}
 
 type SSHExecutor struct {
 	address string
@@ -89,11 +59,20 @@ func (s *SSHExecutor) Run(ctx context.Context, command string) (string, error) {
 		return "", fmt.Errorf("SSH session gagal")
 	}
 	defer session.Close()
-	output := &cappedOutput{}
-	session.Stdout, session.Stderr = output, output
-	err = session.Run(command)
-	if err != nil {
-		return output.String(), fmt.Errorf("perintah Docker gagal; cek output")
+	output, err := session.CombinedOutput(command)
+
+	// Keep the response sent to the LLM small. CombinedOutput buffers it first.
+	truncated := len(output) > outputLimit
+	if truncated {
+		output = output[:outputLimit]
 	}
-	return output.String(), nil
+	text := strings.ToValidUTF8(string(output), "?")
+	if truncated {
+		text += "\n[output truncated at 32 KiB]"
+	}
+
+	if err != nil {
+		return text, fmt.Errorf("perintah Docker gagal; cek output")
+	}
+	return text, nil
 }

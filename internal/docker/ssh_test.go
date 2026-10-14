@@ -126,7 +126,7 @@ func TestSSHAuthenticatedCommandAndOutputBound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	output, err := exec.Run(ctx, "docker logs --timestamps --tail 100 -- 'demo-app'")
-	if err != nil || !strings.Contains(output, "[output truncated") {
+	if err != nil || output != strings.Repeat("x", outputLimit)+"\n[output truncated at 32 KiB]" {
 		t.Fatal(err, len(output))
 	}
 	if got := <-command; got != "docker logs --timestamps --tail 100 -- 'demo-app'" {
