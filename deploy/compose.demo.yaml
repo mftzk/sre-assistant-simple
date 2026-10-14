@@ -1,0 +1,16 @@
+# Run only on the chosen SSH demo server; no ports or volumes needed.
+services:
+  demo-app:
+    image: alpine:3.22
+    container_name: demo-app
+    command:
+      - /bin/sh
+      - -c
+      - |
+        trap 'exit 0' TERM INT
+        echo "$$(date -u +%FT%TZ) INFO demo-app startup"
+        echo "$$(date -u +%FT%TZ) WARN example warning for log analysis; not a real outage"
+        while true; do
+          echo "$$(date -u +%FT%TZ) INFO heartbeat"
+          sleep 5 & wait $$!
+        done

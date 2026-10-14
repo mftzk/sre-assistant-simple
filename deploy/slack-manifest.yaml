@@ -1,0 +1,18 @@
+display_information:
+  name: SRE Assistant Simple
+features:
+  bot_user:
+    display_name: sre-assistant-simple
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - chat:write
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+  socket_mode_enabled: true
+  org_deploy_enabled: false
+  token_rotation_enabled: false
