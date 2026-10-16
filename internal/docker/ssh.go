@@ -2,9 +2,11 @@ package docker
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +30,7 @@ type SSHExecutor struct {
 }
 
 func NewSSHExecutor(c config.Config) (*SSHExecutor, error) {
-	signer, err := ssh.ParsePrivateKey([]byte(c.PrivateKey))
+	signer, err := ssh.ParsePrivateKey(normalizePEM(c.PrivateKey))
 	if err != nil {
 		return nil, fmt.Errorf("SSH_PRIVATE_KEY: gagal parse PEM (gunakan key tanpa passphrase atau agent khusus demo)")
 	}
@@ -46,6 +48,33 @@ func NewSSHExecutor(c config.Config) (*SSHExecutor, error) {
 		},
 	}, nil
 }
+
+// normalizePEM repairs keys damaged by web forms that store env values on one
+// line: literal "\n", spaces or no separators instead of newlines. A
+// base64-encoded PEM is accepted too.
+func normalizePEM(value string) []byte {
+	value = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, `\n`, "\n"), "\r", ""))
+	if !strings.Contains(value, "-----BEGIN ") {
+		if decoded, err := base64.StdEncoding.DecodeString(value); err == nil && strings.Contains(string(decoded), "-----BEGIN ") {
+			value = strings.TrimSpace(string(decoded))
+		}
+	}
+	match := pemBlock.FindStringSubmatch(value)
+	if match == nil {
+		return []byte(value)
+	}
+	body := strings.Join(strings.Fields(match[2]), "")
+	var b strings.Builder
+	b.WriteString("-----BEGIN " + match[1] + "-----\n")
+	for len(body) > 70 {
+		b.WriteString(body[:70] + "\n")
+		body = body[70:]
+	}
+	b.WriteString(body + "\n-----END " + match[1] + "-----\n")
+	return []byte(b.String())
+}
+
+var pemBlock = regexp.MustCompile(`(?s)-----BEGIN ([A-Z0-9 ]+)-----(.*?)-----END ([A-Z0-9 ]+)-----`)
 
 // hostKeyCallback verifies the server against known_hosts, unless the demo
 // explicitly opts out with SSH_INSECURE_SKIP_HOST_KEY=true.

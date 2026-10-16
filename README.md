@@ -1,7 +1,8 @@
 # SRE Assistant Simple
 
 Contoh kecil untuk belajar **agent harness** lewat sharing session. Bot Slack
-punya dua kemampuan: baca log Docker dan restart container di **satu server SSH**.
+bisa melihat daftar container, inspect state, baca log Docker, dan restart
+container di **satu server SSH**.
 Loop agent ditulis langsung di Go supaya alurnya bisa dibaca tanpa framework agent.
 
 ```text
@@ -11,7 +12,9 @@ Loop agent ditulis langsung di Go supaya alurnya bisa dibaca tanpa framework age
                          jawaban akhir → thread Slack
 ```
 
-Semua user yang mention bot boleh baca log container dalam allowlist. Restart
+Semua user yang mention bot boleh melihat daftar, inspect, dan baca log container
+dalam allowlist, sehingga user non-SRE bisa bertanya "apa yang terjadi" tanpa
+akses server. Restart
 langsung hanya untuk Slack user ID dalam `SRE_SLACK_USER_IDS`; tidak ada approval
 tambahan. Authorization diperiksa kode sebelum SSH, bukan berdasarkan keputusan
 LLM, nama user, atau teks “saya SRE”.
@@ -62,6 +65,10 @@ langsung. Tidak perlu Docker di mesin bot, public HTTP endpoint, atau database.
    go run ./cmd/sre-assistant
    ```
 
+   Kalau env diisi lewat form web satu baris (misalnya Nrapken), isi dengan
+   base64 PEM: `base64 -w0 demo-key`. Bot juga memperbaiki PEM yang newline-nya
+   berubah jadi spasi atau `\n`.
+
    Key tanpa passphrase digunakan untuk contoh ini. Jangan commit `.env` atau key.
    Port default `22`; base URL LLM menerima suffix `/v1` maupun tanpa suffix itu.
    Model ditentukan lewat `LLM_MODEL`, tidak ada model bawaan.
@@ -96,8 +103,10 @@ berlabel, batas loop berupa konstanta di atas file, dan system prompt terpisah
 di `internal/agent/prompt.go`. Cek
 `internal/authz/authz.go` untuk authorization: harness memakai gate yang sama
 untuk memilih tool, dispatcher Docker mengeceknya lagi sebelum SSH.
-Tool Docker didefinisikan sebagai function biasa: `Log` di
-[internal/docker/log.go](internal/docker/log.go) dan `Restart` di
+Tool Docker didefinisikan sebagai function biasa: `List` di
+[internal/docker/list.go](internal/docker/list.go), `Inspect` di
+[internal/docker/inspect.go](internal/docker/inspect.go), `Log` di
+[internal/docker/log.go](internal/docker/log.go), dan `Restart` di
 [internal/docker/restart.go](internal/docker/restart.go). Masing-masing berisi
 validasi dan command Docker-nya sendiri. `Execute` di `internal/docker/tools.go`
 membaca JSON arguments, memilih function lewat `switch`, dan mengemas hasilnya.
@@ -108,6 +117,8 @@ agar command lama `go run .` tetap bekerja.
 Kontrak tool:
 
 ```json
+{"name":"docker_list","arguments":{}}
+{"name":"docker_inspect","arguments":{"container":"demo-app"}}
 {"name":"docker_logs","arguments":{"container":"demo-app","tail":100}}
 {"name":"docker_restart","arguments":{"container":"demo-app"}}
 ```
@@ -126,7 +137,10 @@ mengirim tool yang tidak ditawarkan. Isi log tidak dapat membuka izin restart.
 Default batas operasi:
 
 - Hanya exact container name dalam `DOCKER_ALLOWED_CONTAINERS`; daftar kosong
-  menolak semua. `SRE_SLACK_USER_IDS` kosong menolak semua restart.
+  menolak semua. `docker_list` memfilter output di Go, jadi container lain di
+  server tidak pernah terlihat. `docker_inspect` memakai template `--format`
+  yang hanya mengambil state, restart count, image, dan waktu dibuat; Env,
+  label, dan mount tidak pernah dikirim ke LLM. `SRE_SLACK_USER_IDS` kosong menolak semua restart.
 - Log default 100 baris, maksimum 200 dan 32 KiB. Tidak ada follow log streaming.
   SSH memakai `session.CombinedOutput()`, lalu memotong hasil ke 32 KiB sebelum
   dikirim ke LLM. Seluruh output ditampung di memory sampai perintah selesai;

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"io"
 	"net"
@@ -182,5 +183,29 @@ func TestSSHSkipHostKeyAcceptsUnknownHost(t *testing.T) {
 	defer cancel()
 	if _, err := exec.Run(ctx, "docker logs --timestamps --tail 100 -- 'demo-app'"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNormalizePEMRepairsFormDamage(t *testing.T) {
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKey(key, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := string(pem.EncodeToMemory(block))
+	for name, damaged := range map[string]string{
+		"intact":         original,
+		"literal-n":      strings.ReplaceAll(original, "\n", `\n`),
+		"spaces":         strings.ReplaceAll(original, "\n", " "),
+		"crlf":           strings.ReplaceAll(original, "\n", "\r\n"),
+		"single-line":    strings.ReplaceAll(original, "\n", ""),
+		"base64-encoded": base64.StdEncoding.EncodeToString([]byte(original)),
+	} {
+		if _, err := ssh.ParsePrivateKey(normalizePEM(damaged)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
