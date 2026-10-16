@@ -86,7 +86,11 @@ deploy/             manifest Slack
 docs/               panduan sharing session
 ```
 
-Mulai dari `internal/agent/harness.go` untuk membaca loop. Cek
+Urutan baca lengkap untuk presentasi ada di
+[docs/sharing-session.md](docs/sharing-session.md#urutan-baca-kode). Mulai dari
+`internal/agent/harness.go` untuk membaca loop: `Run` dibagi empat langkah
+berlabel, batas loop berupa konstanta di atas file, dan system prompt terpisah
+di `internal/agent/prompt.go`. Cek
 `internal/authz/authz.go` untuk authorization: harness memakai gate yang sama
 untuk memilih tool, dispatcher Docker mengeceknya lagi sebelum SSH.
 Tool Docker didefinisikan sebagai function biasa: `Log` di

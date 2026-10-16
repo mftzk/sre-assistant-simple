@@ -28,16 +28,38 @@ func csvSet(value string) map[string]bool {
 	return result
 }
 
+// Load reads every setting from the environment. Nothing here comes from the
+// model: host, key, SRE list and container allowlist are fixed at startup.
 func Load() (Config, error) {
-	c := Config{BotToken: os.Getenv("SLACK_BOT_TOKEN"), AppToken: os.Getenv("SLACK_APP_TOKEN"),
+	c := Config{
+		BotToken: os.Getenv("SLACK_BOT_TOKEN"),
+		AppToken: os.Getenv("SLACK_APP_TOKEN"),
+
+		// Accept the base URL with or without a trailing /v1.
 		BaseURL: strings.TrimSuffix(strings.TrimRight(os.Getenv("LLM_OPENAI_BASE_URL"), "/"), "/v1"),
-		APIKey:  os.Getenv("LLM_OPENAI_API_KEY"), Model: os.Getenv("LLM_MODEL"),
-		Host: os.Getenv("SSH_HOST"), User: os.Getenv("SSH_USER"), PrivateKey: os.Getenv("SSH_PRIVATE_KEY"),
-		KnownHosts: os.Getenv("SSH_KNOWN_HOSTS_FILE"), Port: 22,
-		SREs: csvSet(os.Getenv("SRE_SLACK_USER_IDS")), Containers: csvSet(os.Getenv("DOCKER_ALLOWED_CONTAINERS"))}
-	for name, value := range map[string]string{"SLACK_BOT_TOKEN": c.BotToken, "SLACK_APP_TOKEN": c.AppToken,
-		"LLM_OPENAI_BASE_URL": c.BaseURL, "LLM_OPENAI_API_KEY": c.APIKey, "LLM_MODEL": c.Model,
-		"SSH_HOST": c.Host, "SSH_USER": c.User, "SSH_PRIVATE_KEY": c.PrivateKey} {
+		APIKey:  os.Getenv("LLM_OPENAI_API_KEY"),
+		Model:   os.Getenv("LLM_MODEL"),
+
+		Host:       os.Getenv("SSH_HOST"),
+		Port:       22,
+		User:       os.Getenv("SSH_USER"),
+		PrivateKey: os.Getenv("SSH_PRIVATE_KEY"),
+		KnownHosts: os.Getenv("SSH_KNOWN_HOSTS_FILE"),
+
+		SREs:       csvSet(os.Getenv("SRE_SLACK_USER_IDS")),
+		Containers: csvSet(os.Getenv("DOCKER_ALLOWED_CONTAINERS")),
+	}
+	required := map[string]string{
+		"SLACK_BOT_TOKEN":     c.BotToken,
+		"SLACK_APP_TOKEN":     c.AppToken,
+		"LLM_OPENAI_BASE_URL": c.BaseURL,
+		"LLM_OPENAI_API_KEY":  c.APIKey,
+		"LLM_MODEL":           c.Model,
+		"SSH_HOST":            c.Host,
+		"SSH_USER":            c.User,
+		"SSH_PRIVATE_KEY":     c.PrivateKey,
+	}
+	for name, value := range required {
 		if strings.TrimSpace(value) == "" {
 			return c, fmt.Errorf("%s wajib diisi", name)
 		}

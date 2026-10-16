@@ -9,6 +9,9 @@ import (
 	"net/http"
 )
 
+// These types mirror the OpenAI Chat Completions format. The whole "protocol"
+// between harness and model is: a list of messages in, one message out.
+
 type FunctionCall struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
@@ -29,6 +32,8 @@ type LLM struct {
 	Client              *http.Client
 }
 
+// Chat sends the conversation plus the tool schemas the model may use, and
+// returns the model's reply: either text, or a list of tool calls to run.
 func (l *LLM) Chat(ctx context.Context, messages []Message, tools []map[string]any) (Message, error) {
 	payload, err := json.Marshal(map[string]any{"model": l.Model, "messages": messages, "tools": tools})
 	if err != nil {

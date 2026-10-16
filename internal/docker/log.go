@@ -12,7 +12,7 @@ func (d *DockerTools) Log(ctx context.Context, container string, tail int) (stri
 	if !authz.ValidContainer(container) || !d.Containers[container] {
 		return "", fmt.Errorf("container tidak diizinkan")
 	}
-	if tail < 1 || tail > 200 {
+	if tail < 1 || tail > maxTail {
 		return "", fmt.Errorf("tail harus 1 sampai 200")
 	}
 
