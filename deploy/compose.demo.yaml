@@ -1,0 +1,63 @@
+# Demo targets for the sharing session: three small HTTP services (cmd/demo)
+# plus a load generator. Run on the SSH demo server from a clone of this repo:
+#   docker compose -f deploy/compose.demo.yaml up -d --build
+# Then set DOCKER_ALLOWED_CONTAINERS='demo-app,demo-api,demo-worker'.
+# Logs are fake and safe to send to the LLM.
+
+x-demo: &demo
+  build:
+    context: ..
+    dockerfile: deploy/demo.Dockerfile
+  image: sre-demo:local
+  restart: unless-stopped
+
+services:
+  # Healthy baseline: always 200.
+  demo-app:
+    <<: *demo
+    container_name: demo-app
+    environment:
+      SERVICE_NAME: demo-app
+      MODE: healthy
+    ports:
+      - "18081:8080"
+
+  # Breaks after DEGRADE_AFTER seconds and stays broken until restarted.
+  # Story: read logs -> model spots pool exhaustion -> SRE restarts -> healthy again.
+  demo-api:
+    <<: *demo
+    container_name: demo-api
+    environment:
+      SERVICE_NAME: demo-api
+      MODE: degrade
+      DEGRADE_AFTER: "60"
+    ports:
+      - "18082:8080"
+
+  # Noisy but not broken: retry warnings, requests still succeed. Restart is NOT the fix.
+  demo-worker:
+    <<: *demo
+    container_name: demo-worker
+    environment:
+      SERVICE_NAME: demo-worker
+      MODE: flaky
+    ports:
+      - "18083:8080"
+
+  # Sends traffic so every service logs real requests. Not in the allowlist.
+  demo-loadgen:
+    image: alpine:3.22
+    container_name: demo-loadgen
+    restart: unless-stopped
+    depends_on: [demo-app, demo-api, demo-worker]
+    command:
+      - /bin/sh
+      - -c
+      - |
+        trap 'exit 0' TERM INT
+        while true; do
+          wget -q -T 5 -O /dev/null http://demo-app:8080/ 2>/dev/null
+          wget -q -T 5 -O /dev/null http://demo-api:8080/orders 2>/dev/null
+          wget -q -T 5 -O /dev/null http://demo-worker:8080/send-email 2>/dev/null
+          sleep 2 & wait $$!
+        done
