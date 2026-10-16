@@ -32,6 +32,9 @@ langsung. Tidak perlu Docker di mesin bot, public HTTP endpoint, atau database.
 3. Siapkan SSH key khusus demo dan host key yang sudah diverifikasi di
    `~/.ssh/known_hosts`, atau file yang ditunjuk `SSH_KNOWN_HOSTS_FILE`.
    Untuk port nonstandar, entri host memakai bentuk `[host]:port`.
+   Khusus server demo (misalnya container tanpa file `known_hosts`), set
+   `SSH_INSECURE_SKIP_HOST_KEY=true` untuk melewati verifikasi host key.
+   Risikonya: bot tidak bisa membedakan server asli dari server palsu (MITM).
 4. Di folder project ini:
 
    ```bash
@@ -128,7 +131,8 @@ Default batas operasi:
   SSH memakai `session.CombinedOutput()`, lalu memotong hasil ke 32 KiB sebelum
   dikirim ke LLM. Seluruh output ditampung di memory sampai perintah selesai;
   batas 32 KiB membatasi hasil, bukan memory saat pembacaan.
-- SSH/tool timeout 30 detik; handshake maksimum 10 detik. Host key wajib cocok.
+- SSH/tool timeout 30 detik; handshake maksimum 10 detik. Host key wajib cocok,
+  kecuali `SSH_INSECURE_SKIP_HOST_KEY=true`.
 - Maksimum enam putaran tool, empat call per putaran, satu percobaan restart
   per container per pesan. Error/timeout tidak menyebabkan retry restart.
 - Turn maksimum tiga menit. Satu worker menjalankan request berurutan, antrean

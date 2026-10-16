@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -31,19 +32,33 @@ func NewSSHExecutor(c config.Config) (*SSHExecutor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("SSH_PRIVATE_KEY: gagal parse PEM (gunakan key tanpa passphrase atau agent khusus demo)")
 	}
-	verify, err := knownhosts.New(c.KnownHosts)
+	verify, err := hostKeyCallback(c)
 	if err != nil {
-		return nil, fmt.Errorf("known_hosts: %w", err)
+		return nil, err
 	}
 	return &SSHExecutor{
 		address: net.JoinHostPort(c.Host, strconv.Itoa(c.Port)),
 		config: &ssh.ClientConfig{
 			User:            c.User,
 			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-			HostKeyCallback: verify, // host key must match known_hosts
+			HostKeyCallback: verify,
 			Timeout:         handshakeTimeout,
 		},
 	}, nil
+}
+
+// hostKeyCallback verifies the server against known_hosts, unless the demo
+// explicitly opts out with SSH_INSECURE_SKIP_HOST_KEY=true.
+func hostKeyCallback(c config.Config) (ssh.HostKeyCallback, error) {
+	if c.SkipHostKey {
+		log.Print("WARNING: SSH host key verification disabled (SSH_INSECURE_SKIP_HOST_KEY=true)")
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
+	verify, err := knownhosts.New(c.KnownHosts)
+	if err != nil {
+		return nil, fmt.Errorf("known_hosts: %w", err)
+	}
+	return verify, nil
 }
 
 // Run opens a fresh SSH connection, runs one command and returns its output.

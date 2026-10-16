@@ -169,3 +169,18 @@ func TestSSHTimeoutClosesConnection(t *testing.T) {
 		t.Fatal("timeout did not stop transport")
 	}
 }
+
+func TestSSHSkipHostKeyAcceptsUnknownHost(t *testing.T) {
+	c, _ := localSSH(t, "ok", false)
+	c.KnownHosts = filepath.Join(t.TempDir(), "missing")
+	c.SkipHostKey = true
+	exec, err := NewSSHExecutor(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := exec.Run(ctx, "docker logs --timestamps --tail 100 -- 'demo-app'"); err != nil {
+		t.Fatal(err)
+	}
+}

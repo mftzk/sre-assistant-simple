@@ -15,6 +15,7 @@ type Config struct {
 	BotToken, AppToken, BaseURL, APIKey, Model string
 	Host, User, PrivateKey, KnownHosts         string
 	Port                                       int
+	SkipHostKey                                bool
 	SREs, Containers                           map[string]bool
 }
 
@@ -45,6 +46,8 @@ func Load() (Config, error) {
 		User:       os.Getenv("SSH_USER"),
 		PrivateKey: os.Getenv("SSH_PRIVATE_KEY"),
 		KnownHosts: os.Getenv("SSH_KNOWN_HOSTS_FILE"),
+		// Demo-only escape hatch: accept any server host key (no MITM protection).
+		SkipHostKey: os.Getenv("SSH_INSECURE_SKIP_HOST_KEY") == "true",
 
 		SREs:       csvSet(os.Getenv("SRE_SLACK_USER_IDS")),
 		Containers: csvSet(os.Getenv("DOCKER_ALLOWED_CONTAINERS")),
