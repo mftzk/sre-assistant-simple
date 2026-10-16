@@ -140,11 +140,16 @@ func traceTool(call ToolCall, container, result string, duration time.Duration, 
 	}
 	_ = json.Unmarshal([]byte(result), &status)
 
-	if !authz.ValidContainer(container) {
+	switch {
+	case container == "":
+		container = "-"
+	case !authz.ValidContainer(container):
 		container = "invalid"
 	}
 	tool := call.Function.Name
-	if tool != "docker_logs" && tool != "docker_restart" {
+	switch tool {
+	case "docker_list", "docker_inspect", "docker_logs", "docker_restart":
+	default:
 		tool = "unknown"
 	}
 	log.Printf("tool=%s container=%s ok=%t duration=%s user=%s", tool, container, status.OK, duration.Round(time.Millisecond), caller)

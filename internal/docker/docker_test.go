@@ -55,6 +55,11 @@ func TestDockerPolicyAndCommands(t *testing.T) {
 		{"unknown-arg", "USRE", "docker_logs", `{"container":"demo-app","command":"rm"}`, false, false, ""},
 		{"invalid-json", "USRE", "docker_logs", `{`, false, false, ""},
 		{"extra-json", "USRE", "docker_logs", `{"container":"demo-app"} {}`, false, false, ""},
+		{"list-public", "UDEV", "docker_list", `{}`, false, true, "docker ps --all --no-trunc --format '{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Image}}'"},
+		{"list-with-args", "UDEV", "docker_list", `{"container":"demo-app"}`, false, false, ""},
+		{"inspect-public", "UDEV", "docker_inspect", `{"container":"demo-app"}`, false, true, "docker inspect --type container --format '" + inspectTemplate + "' -- 'demo-app'"},
+		{"inspect-other", "UDEV", "docker_inspect", `{"container":"prod"}`, false, false, ""},
+		{"inspect-tail", "UDEV", "docker_inspect", `{"container":"demo-app","tail":5}`, false, false, ""},
 		{"unknown-tool", "USRE", "shell", `{"container":"demo-app"}`, true, false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

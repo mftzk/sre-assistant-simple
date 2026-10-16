@@ -48,6 +48,10 @@ func (d *DockerTools) Execute(ctx context.Context, caller string, restartAllowed
 	var err error
 
 	switch call.Function.Name {
+	case "docker_list":
+		output, err = d.executeList(ctx, call.Function.Arguments)
+	case "docker_inspect":
+		output, err = d.executeInspect(ctx, call.Function.Arguments)
 	case "docker_logs":
 		output, err = d.executeLog(ctx, call.Function.Arguments)
 	case "docker_restart":
@@ -62,6 +66,28 @@ func (d *DockerTools) Execute(ctx context.Context, caller string, restartAllowed
 	}
 	encoded, _ := json.Marshal(result)
 	return string(encoded)
+}
+
+func (d *DockerTools) executeList(ctx context.Context, arguments string) (string, error) {
+	args, err := parseArguments(arguments)
+	if err != nil {
+		return "", err
+	}
+	if args.Container != "" || args.Tail != nil {
+		return "", fmt.Errorf("list tidak menerima argumen")
+	}
+	return d.List(ctx)
+}
+
+func (d *DockerTools) executeInspect(ctx context.Context, arguments string) (string, error) {
+	args, err := parseArguments(arguments)
+	if err != nil {
+		return "", err
+	}
+	if args.Tail != nil {
+		return "", fmt.Errorf("inspect tidak menerima tail")
+	}
+	return d.Inspect(ctx, args.Container)
 }
 
 func (d *DockerTools) executeLog(ctx context.Context, arguments string) (string, error) {

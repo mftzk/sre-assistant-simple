@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"sre-assistant-simple/internal/authz"
@@ -68,5 +69,37 @@ func TestRestartFunctionEnforcesAuthorization(t *testing.T) {
 	}
 	if len(executor.Commands) != 1 || executor.Commands[0] != "docker restart --timeout 10 -- 'demo-app'" {
 		t.Fatal(executor.Commands)
+	}
+}
+
+func TestListShowsOnlyAllowlistedContainers(t *testing.T) {
+	executor := &fakeExecutor{Output: "demo-app\trunning\tUp 5 minutes\tsre-demo:local\nsecret-db\trunning\tUp 2 days\tpostgres:16\n"}
+	docker := &DockerTools{Exec: executor, Containers: map[string]bool{"demo-app": true, "demo-api": true}}
+
+	output, err := docker.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output, "secret-db") || !strings.Contains(output, "demo-app\trunning") || !strings.Contains(output, "demo-api\tnot found on server") {
+		t.Fatal(output)
+	}
+	if _, err := (&DockerTools{Exec: executor, Containers: map[string]bool{}}).List(context.Background()); err == nil {
+		t.Fatal("empty allowlist accepted")
+	}
+}
+
+func TestInspectNeverRequestsEnv(t *testing.T) {
+	executor := &fakeExecutor{Output: `{"name":"/demo-api"}`}
+	docker := &DockerTools{Exec: executor, Containers: map[string]bool{"demo-api": true}}
+
+	if _, err := docker.Inspect(context.Background(), "demo-api"); err != nil {
+		t.Fatal(err)
+	}
+	command := executor.Commands[0]
+	if !strings.HasPrefix(command, "docker inspect --type container --format ") || !strings.HasSuffix(command, " -- 'demo-api'") || strings.Contains(command, "Env") {
+		t.Fatal(command)
+	}
+	if _, err := docker.Inspect(context.Background(), "other-app"); err == nil || len(executor.Commands) != 1 {
+		t.Fatal("container outside allowlist reached SSH")
 	}
 }
