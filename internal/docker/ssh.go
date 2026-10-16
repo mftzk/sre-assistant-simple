@@ -94,7 +94,9 @@ func hostKeyCallback(c config.Config) (ssh.HostKeyCallback, error) {
 func (s *SSHExecutor) Run(ctx context.Context, command string) (string, error) {
 	conn, err := (&net.Dialer{Timeout: handshakeTimeout}).DialContext(ctx, "tcp", s.address)
 	if err != nil {
-		return "", fmt.Errorf("SSH connection gagal")
+		// The address stays in the operator log, not in the result sent to the model.
+		log.Printf("ssh_connect_failed: %v", err)
+		return "", fmt.Errorf("SSH connection gagal (host tidak terjangkau atau port ditutup)")
 	}
 	defer conn.Close()
 	// Closing the TCP connection is how a canceled context stops a running command.
@@ -130,10 +132,28 @@ func (s *SSHExecutor) handshake(ctx context.Context, conn net.Conn) (*ssh.Client
 	_ = conn.SetDeadline(deadline)
 	cc, chans, reqs, err := ssh.NewClientConn(conn, s.address, s.config)
 	if err != nil {
-		return nil, fmt.Errorf("SSH handshake gagal (cek key dan known_hosts)")
+		// x/crypto errors name the failed step, e.g. "unable to authenticate,
+		// attempted methods [none publickey]" or "knownhosts: key is unknown".
+		log.Printf("ssh_handshake_failed: %v", err)
+		return nil, fmt.Errorf("SSH handshake gagal: %s", handshakeReason(err))
 	}
 	_ = conn.SetDeadline(time.Time{})
 	return ssh.NewClient(cc, chans, reqs), nil
+}
+
+// handshakeReason turns a handshake error into a short hint without addresses.
+func handshakeReason(err error) string {
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "unable to authenticate"):
+		return "key ditolak server (cek SSH_USER dan authorized_keys)"
+	case strings.Contains(message, "knownhosts"):
+		return "host key tidak cocok dengan known_hosts"
+	case strings.Contains(message, "i/o timeout"), strings.Contains(message, "deadline exceeded"):
+		return "timeout saat handshake"
+	default:
+		return "lihat log bot (ssh_handshake_failed)"
+	}
 }
 
 // limitOutput keeps the text sent to the LLM small. CombinedOutput buffers
