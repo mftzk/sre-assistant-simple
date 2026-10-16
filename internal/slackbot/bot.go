@@ -39,27 +39,27 @@ func Run(ctx context.Context, c config.Config, harness *agent.Harness) error {
 
 	client := socketmode.New(api)
 	queue := make(chan *slackevents.AppMentionEvent, queueSize)
-	go processMentions(ctx, api, harness, identity.UserID, queue)
+	go processMentions(ctx, api, harness, identity.UserID, identity.TeamID, queue)
 	go receiveMentions(ctx, api, client, identity.UserID, queue)
 	return client.RunContext(ctx)
 }
 
 // processMentions is the only worker. One worker keeps session updates
 // ordered and avoids parallel restart races.
-func processMentions(ctx context.Context, api *slack.Client, harness *agent.Harness, botID string, queue <-chan *slackevents.AppMentionEvent) {
+func processMentions(ctx context.Context, api *slack.Client, harness *agent.Harness, botID, teamID string, queue <-chan *slackevents.AppMentionEvent) {
 	sessions := sessionStore{}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case ev := <-queue:
-			handleMention(ctx, api, harness, sessions, botID, ev)
+			handleMention(ctx, api, harness, sessions, botID, teamID, ev)
 		}
 	}
 }
 
 // handleMention runs one user message through the harness and replies.
-func handleMention(ctx context.Context, api *slack.Client, harness *agent.Harness, sessions sessionStore, botID string, ev *slackevents.AppMentionEvent) {
+func handleMention(ctx context.Context, api *slack.Client, harness *agent.Harness, sessions sessionStore, botID, teamID string, ev *slackevents.AppMentionEvent) {
 	key := mentionKey(ev)
 	text := strings.TrimSpace(strings.ReplaceAll(ev.Text, "<@"+botID+">", ""))
 	if text == "" {
@@ -71,10 +71,20 @@ func handleMention(ctx context.Context, api *slack.Client, harness *agent.Harnes
 		return
 	}
 
+	if ev.UserTeam != "" {
+		teamID = ev.UserTeam
+	}
+	// Native Slack streaming shows each tool call live; nil means fall back to a plain reply.
+	live := startStream(ctx, api, key, teamID)
+	var progress agent.Progress
+	if live != nil {
+		progress = live.progress
+	}
+
 	session := sessions.get(key, time.Now())
 	runCtx, cancel := context.WithTimeout(ctx, turnTimeout)
 	// ev.User is the real Slack user ID; the harness uses it for authorization.
-	answer, turn, err := harness.Run(runCtx, ev.User, text, session.history())
+	answer, turn, err := harness.RunWithProgress(runCtx, ev.User, text, session.history(), progress)
 	cancel()
 	if err != nil {
 		answer = "Permintaan berhenti: " + err.Error() + ". Jika restart sudah dimulai, cek log sebelum mencoba ulang."
@@ -82,7 +92,9 @@ func handleMention(ctx context.Context, api *slack.Client, harness *agent.Harnes
 		turn = []agent.Message{{Role: "user", Content: text}, {Role: "assistant", Content: answer}}
 	}
 	session.add(turn, time.Now())
-	reply(ctx, api, key, answer)
+	if live == nil || !live.finish(escape(answer)) {
+		reply(ctx, api, key, answer)
+	}
 }
 
 // receiveMentions acks every Socket Mode event and queues human @mentions.
@@ -150,24 +162,37 @@ func humanMention(ev *slackevents.AppMentionEvent, selfID string) bool {
 	return ev != nil && ev.BotID == "" && ev.User != "" && ev.User != selfID && ev.Edited == nil && ev.Channel != "" && ev.TimeStamp != ""
 }
 
-// reply posts text in the thread, split into Slack-sized chunks.
+// reply posts text in the thread as plain messages (fallback when streaming is unavailable).
 func reply(ctx context.Context, api *slack.Client, key sessionKey, text string) {
-	// Escape control syntax so log/model output cannot ping users or channels.
-	text = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
-	runes := []rune(text)
-	if len(runes) > maxReplyRunes {
-		runes = append(runes[:maxReplyRunes], []rune("\n[jawaban dipotong]")...)
-	}
-	for len(runes) > 0 {
-		n := min(len(runes), slackChunkRunes)
+	for _, part := range chunks(escape(text)) {
 		postCtx, cancel := context.WithTimeout(ctx, slackTimeout)
-		_, _, err := api.PostMessageContext(postCtx, key.Channel, slack.MsgOptionText(string(runes[:n]), false),
+		_, _, err := api.PostMessageContext(postCtx, key.Channel, slack.MsgOptionText(part, false),
 			slack.MsgOptionTS(key.Thread), slack.MsgOptionDisableLinkUnfurl(), slack.MsgOptionDisableMediaUnfurl())
 		cancel()
 		if err != nil {
 			log.Print("slack_reply_failed (tindakan Docker tidak diulang)")
 			return
 		}
+	}
+}
+
+// escape neutralises Slack control syntax so log/model output cannot ping
+// users or channels.
+func escape(text string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+}
+
+// chunks caps the answer and splits it into Slack-sized parts.
+func chunks(text string) []string {
+	runes := []rune(text)
+	if len(runes) > maxReplyRunes {
+		runes = append(runes[:maxReplyRunes], []rune("\n[jawaban dipotong]")...)
+	}
+	var parts []string
+	for len(runes) > 0 {
+		n := min(len(runes), slackChunkRunes)
+		parts = append(parts, string(runes[:n]))
 		runes = runes[n:]
 	}
+	return parts
 }

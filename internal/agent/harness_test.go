@@ -167,3 +167,35 @@ func toolOK(t *testing.T, result string) bool {
 	}
 	return data.OK
 }
+
+func TestHarnessReportsToolProgress(t *testing.T) {
+	f := &fakeExecutor{Output: "ok"}
+	l := scriptedLLM(t, func(n int, in chatInput) agent.Message {
+		if n == 0 {
+			return agent.Message{ToolCalls: []agent.ToolCall{
+				toolCall("docker_logs", `{"container":"demo-app"}`),
+				{ID: "call-2", Type: "function", Function: agent.FunctionCall{Name: "docker_logs", Arguments: `{"container":"x; rm -rf /"}`}},
+			}}
+		}
+		return agent.Message{Content: "done"}
+	})
+	h := &agent.Harness{LLM: l, Docker: &docker.DockerTools{Exec: f, Auth: authz.New(nil), Containers: map[string]bool{"demo-app": true}}}
+	var events []agent.ToolEvent
+	if _, _, err := h.RunWithProgress(context.Background(), "UDEV", "cek log", nil, func(ev agent.ToolEvent) { events = append(events, ev) }); err != nil {
+		t.Fatal(err)
+	}
+	want := []agent.ToolEvent{
+		{ID: "call-1", Tool: "docker_logs", Container: "demo-app"},
+		{ID: "call-1", Tool: "docker_logs", Container: "demo-app", Done: true, OK: true},
+		{ID: "call-2", Tool: "docker_logs"},
+		{ID: "call-2", Tool: "docker_logs", Done: true},
+	}
+	if len(events) != len(want) {
+		t.Fatalf("%+v", events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("event %d = %+v, want %+v", i, events[i], want[i])
+		}
+	}
+}

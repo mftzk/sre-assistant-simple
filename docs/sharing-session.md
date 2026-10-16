@@ -67,8 +67,10 @@ Baca dari luar ke dalam, satu konsep per file:
 8. `internal/docker/ssh.go` — eksekusi nyata: host key wajib cocok, output
    dipotong 32 KiB sebelum masuk LLM.
 9. `internal/slackbot/` — antarmuka: `receiveMentions` (filter + dedup) →
-   antrean → `processMentions`/`handleMention` → balasan thread; `session.go`
-   menyimpan memory di RAM.
+   antrean → `processMentions`/`handleMention` → balasan thread; `stream.go`
+   memakai streaming bawaan Slack (`chat.startStream`) sehingga tiap tool call
+   tampil live sebagai task card (callback `RunWithProgress` di harness);
+   `session.go` menyimpan memory di RAM.
 
 Semua batas (jumlah putaran, timeout, ukuran output, TTL session) berupa
 konstanta bernama di atas file masing-masing, jadi gampang ditunjuk dan diubah

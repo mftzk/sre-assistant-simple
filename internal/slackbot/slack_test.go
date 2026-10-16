@@ -1,6 +1,7 @@
 package slackbot
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -51,5 +52,19 @@ func TestDedupAndHumanMentions(t *testing.T) {
 	ev.User = "BOT"
 	if humanMention(ev, "BOT") {
 		t.Fatal("self event accepted")
+	}
+}
+
+func TestChunksAndToolTitles(t *testing.T) {
+	parts := chunks(strings.Repeat("a", 7000))
+	if len(parts) != 3 || len([]rune(parts[0])) != 3000 {
+		t.Fatal(len(parts))
+	}
+	if escape("<@U1> & <!here>") != "&lt;@U1&gt; &amp; &lt;!here&gt;" {
+		t.Fatal("mentions not escaped")
+	}
+	if toolTitle(agent.ToolEvent{Tool: "docker_logs", Container: "demo-api"}) != "Baca log demo-api" ||
+		toolTitle(agent.ToolEvent{Tool: "docker_inspect"}) != "Inspect container" {
+		t.Fatal("unexpected titles")
 	}
 }

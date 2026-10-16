@@ -24,6 +24,16 @@ type Tools interface {
 	CanRestart(caller, text string) bool
 }
 
+// ToolEvent reports one tool call to the user interface: once when it starts
+// (Done=false) and once when it finishes. It carries no tool output.
+type ToolEvent struct {
+	ID, Tool, Container string
+	Done, OK            bool
+}
+
+// Progress receives ToolEvents while a turn runs. It may be nil.
+type Progress func(ToolEvent)
+
 // Harness = model + tools + the loop that connects them.
 type Harness struct {
 	LLM    *LLM
@@ -40,6 +50,12 @@ type Harness struct {
 // It returns the final answer and the messages of this turn, so the caller
 // can keep them as history for follow-up questions.
 func (h *Harness) Run(ctx context.Context, caller, text string, history []Message) (string, []Message, error) {
+	return h.RunWithProgress(ctx, caller, text, history, nil)
+}
+
+// RunWithProgress is Run plus a callback so the interface can show each tool
+// call live (Slack renders them as task cards).
+func (h *Harness) RunWithProgress(ctx context.Context, caller, text string, history []Message, progress Progress) (string, []Message, error) {
 	// Step 1: permission is decided by code from the real Slack user ID and the
 	// current message, before the model sees anything.
 	canRestart := h.Docker.CanRestart(caller, text)
@@ -81,7 +97,7 @@ func (h *Harness) Run(ctx context.Context, caller, text string, history []Messag
 		turn = append(turn, answer)
 
 		for _, call := range answer.ToolCalls {
-			result := h.runTool(ctx, caller, canRestart, restarted, call)
+			result := h.runTool(ctx, caller, canRestart, restarted, call, progress)
 			// The result goes back as a "tool" message linked by tool_call_id.
 			message := Message{Role: "tool", ToolCallID: call.ID, Content: result}
 			messages = append(messages, message)
@@ -107,9 +123,19 @@ func checkToolCalls(calls []ToolCall) error {
 }
 
 // runTool executes one tool call and returns its JSON result for the model.
-func (h *Harness) runTool(ctx context.Context, caller string, canRestart bool, restarted map[string]bool, call ToolCall) string {
+func (h *Harness) runTool(ctx context.Context, caller string, canRestart bool, restarted map[string]bool, call ToolCall, progress Progress) string {
 	start := time.Now()
 	container := containerArg(call)
+	shown := container
+	if !authz.ValidContainer(shown) {
+		shown = "" // never show unvalidated model input in the UI
+	}
+	report := func(done, ok bool) {
+		if progress != nil {
+			progress(ToolEvent{ID: call.ID, Tool: call.Function.Name, Container: shown, Done: done, OK: ok})
+		}
+	}
+	report(false, false)
 
 	permitted := canRestart
 	if call.Function.Name == "docker_restart" {
@@ -118,7 +144,8 @@ func (h *Harness) runTool(ctx context.Context, caller string, canRestart bool, r
 	}
 	result := h.Docker.Execute(ctx, caller, permitted, call)
 
-	traceTool(call, container, result, time.Since(start), caller)
+	ok := traceTool(call, container, result, time.Since(start), caller)
+	report(true, ok)
 	return result
 }
 
@@ -134,7 +161,7 @@ func containerArg(call ToolCall) string {
 
 // traceTool prints one line per tool call. It never prints log contents,
 // prompts or model-supplied values that failed validation.
-func traceTool(call ToolCall, container, result string, duration time.Duration, caller string) {
+func traceTool(call ToolCall, container, result string, duration time.Duration, caller string) bool {
 	var status struct {
 		OK bool `json:"ok"`
 	}
@@ -153,4 +180,5 @@ func traceTool(call ToolCall, container, result string, duration time.Duration, 
 		tool = "unknown"
 	}
 	log.Printf("tool=%s container=%s ok=%t duration=%s user=%s", tool, container, status.OK, duration.Round(time.Millisecond), caller)
+	return status.OK
 }

@@ -149,6 +149,11 @@ Default batas operasi:
   kecuali `SSH_INSECURE_SKIP_HOST_KEY=true`.
 - Maksimum enam putaran tool, empat call per putaran, satu percobaan restart
   per container per pesan. Error/timeout tidak menyebabkan retry restart.
+- Jawaban tampil memakai streaming bawaan Slack (`chat.startStream`): tiap tool
+  call menjadi task card yang berubah dari "in progress" ke selesai/gagal, lalu
+  jawaban di-stream. Kalau workspace menolak streaming, bot otomatis kembali ke
+  balasan thread biasa. Task card hanya berisi nama tool dan container, bukan
+  isi log.
 - Turn maksimum tiga menit. Satu worker menjalankan request berurutan, antrean
   maksimum 32, event duplikat diabaikan selama sepuluh menit.
 - Memory maksimal sepuluh turn lengkap per session, expiry 30 menit dan maksimal
