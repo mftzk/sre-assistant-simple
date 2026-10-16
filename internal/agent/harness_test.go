@@ -49,7 +49,7 @@ func TestHarnessLogEvidenceAndFollowup(t *testing.T) {
 	f := &fakeExecutor{Output: "startup at 12:00"}
 	l := scriptedLLM(t, func(n int, in chatInput) agent.Message {
 		if n == 0 {
-			if hasTool(in.Tools, "docker_restart") || !hasTool(in.Tools, "docker_inspect") {
+			if hasTool(in.Tools, "docker_restart") || hasTool(in.Tools, "ssh_command") || !hasTool(in.Tools, "docker_inspect") {
 				t.Error("non-SRE received restart schema or lost read-only tools")
 			}
 			return agent.Message{ToolCalls: []agent.ToolCall{toolCall("docker_logs", `{"container":"demo-app"}`)}}
@@ -67,7 +67,7 @@ func TestHarnessLogEvidenceAndFollowup(t *testing.T) {
 	}
 	h.LLM = scriptedLLM(t, func(n int, in chatInput) agent.Message {
 		if n == 0 {
-			if !hasTool(in.Tools, "docker_restart") || len(in.Messages) != 6 || in.Messages[1].Content != "cek log demo-app" {
+			if !hasTool(in.Tools, "docker_restart") || !hasTool(in.Tools, "ssh_command") || len(in.Messages) != 6 || in.Messages[1].Content != "cek log demo-app" {
 				t.Error("missing follow-up context/schema")
 			}
 			return agent.Message{ToolCalls: []agent.ToolCall{toolCall("docker_restart", `{"container":"demo-app"}`)}}

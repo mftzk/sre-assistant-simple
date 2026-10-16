@@ -11,6 +11,7 @@ import (
 
 	"sre-assistant-simple/internal/agent"
 	"sre-assistant-simple/internal/authz"
+	"sre-assistant-simple/internal/redact"
 )
 
 const (
@@ -56,16 +57,34 @@ func (d *DockerTools) Execute(ctx context.Context, caller string, restartAllowed
 		output, err = d.executeLog(ctx, call.Function.Arguments)
 	case "docker_restart":
 		output, err = d.executeRestart(ctx, caller, restartAllowed, call.Function.Arguments)
+	case "ssh_command":
+		output, err = d.executeCommand(ctx, caller, call.Function.Arguments)
 	default:
 		err = fmt.Errorf("tool tidak dikenal")
 	}
 
-	result := toolResult{OK: err == nil, Output: output}
+	// Every result is scrubbed before it reaches the model (and so Slack).
+	result := toolResult{OK: err == nil, Output: redact.Secrets(output)}
 	if err != nil {
 		result.Error = err.Error()
 	}
 	encoded, _ := json.Marshal(result)
 	return string(encoded)
+}
+
+func (d *DockerTools) executeCommand(ctx context.Context, caller, arguments string) (string, error) {
+	// Reject non-SREs before reading model-supplied arguments.
+	if !d.Auth.IsSRE(caller) {
+		auditRejected(caller, "", "not an SRE")
+		return "", fmt.Errorf("perintah SSH hanya untuk SRE")
+	}
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeStrict(arguments, &args); err != nil {
+		return "", err
+	}
+	return d.Command(ctx, caller, args.Command)
 }
 
 func (d *DockerTools) executeList(ctx context.Context, arguments string) (string, error) {
@@ -117,19 +136,25 @@ func (d *DockerTools) executeRestart(ctx context.Context, caller string, restart
 	return d.Restart(ctx, caller, restartAllowed, args.Container)
 }
 
-// parseArguments accepts exactly one JSON object with known fields only.
+// parseArguments reads the arguments shared by the container tools.
 func parseArguments(arguments string) (toolArgs, error) {
 	var args toolArgs
+	err := decodeStrict(arguments, &args)
+	return args, err
+}
+
+// decodeStrict accepts exactly one JSON object with known fields only.
+func decodeStrict(arguments string, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(arguments))
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&args); err != nil {
-		return args, fmt.Errorf("argumen tool tidak valid")
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("argumen tool tidak valid")
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		return args, fmt.Errorf("argumen tool harus satu objek JSON")
+		return fmt.Errorf("argumen tool harus satu objek JSON")
 	}
-	return args, nil
+	return nil
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
@@ -155,6 +180,9 @@ func (d *DockerTools) AllowedContainers() []string {
 	sort.Strings(names)
 	return names
 }
+
+// CanRunCommand offers ssh_command only to SREs.
+func (d *DockerTools) CanRunCommand(caller string) bool { return d.Auth.IsSRE(caller) }
 
 func (d *DockerTools) CanRestart(caller, text string) bool {
 	return d.Auth.CanRestart(caller, authz.RestartRequested(text))

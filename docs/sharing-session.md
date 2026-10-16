@@ -40,7 +40,12 @@ status sebelum dan sesudah restart.
    → model memakai `docker_list`/`docker_inspect` (state, exit code, restart
    count) lalu `docker_logs`, dan menjelaskannya dengan bahasa awam. Buka
    `internal/docker/inspect.go`: template `--format` sengaja tidak mengambil Env.
-7. Coba container di luar allowlist → ditolak sebelum SSH.
+7. User SRE: `@sre-assistant-simple disk sama memory server aman ga?` → model
+   memakai `ssh_command` (`df -h`, `free -m`). User biasa menanyakan hal yang
+   sama → tool itu tidak ditawarkan. Lalu SRE: `@sre-assistant-simple hapus
+   log lama di /var/log` → ditolak policy; tunjukkan baris
+   `ssh_command_rejected` di terminal bot dan `internal/docker/command.go`.
+8. Coba container di luar allowlist → ditolak sebelum SSH.
 
 Setiap follow-up harus mention bot. Konteks terpisah per channel/thread/**user**;
 user SRE tidak mewarisi percakapan user biasa di thread yang sama.
@@ -62,7 +67,8 @@ Baca dari luar ke dalam, satu konsep per file:
    hanya permintaan; aturan penting dicek ulang di kode.
 6. `internal/authz/authz.go` — gate izin dari user ID Slack asli + kata
    restart eksplisit, bukan dari keputusan LLM.
-7. `internal/docker/tools.go`, `list.go`, `inspect.go`, `log.go`, `restart.go` — dispatcher `switch`
+7. `internal/docker/tools.go`, `list.go`, `inspect.go`, `log.go`, `restart.go`,
+   `command.go` (policy `ssh_command` + audit log), dan `internal/redact` — dispatcher `switch`
    lalu function Go biasa. Hasil selalu `{"ok":...,"output":...,"error":...}`.
 8. `internal/docker/ssh.go` — eksekusi nyata: host key wajib cocok, output
    dipotong 32 KiB sebelum masuk LLM.

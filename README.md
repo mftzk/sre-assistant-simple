@@ -121,6 +121,7 @@ Kontrak tool:
 {"name":"docker_inspect","arguments":{"container":"demo-app"}}
 {"name":"docker_logs","arguments":{"container":"demo-app","tail":100}}
 {"name":"docker_restart","arguments":{"container":"demo-app"}}
+{"name":"ssh_command","arguments":{"command":"df -h"}}
 ```
 
 Hasil tool berbentuk `{"ok":true,"output":"..."}` atau
@@ -141,6 +142,21 @@ Default batas operasi:
   server tidak pernah terlihat. `docker_inspect` memakai template `--format`
   yang hanya mengambil state, restart count, image, dan waktu dibuat; Env,
   label, dan mount tidak pernah dikirim ke LLM. `SRE_SLACK_USER_IDS` kosong menolak semua restart.
+- `ssh_command` (hanya SRE) menjalankan **satu** perintah read-only di host SSH:
+  binary harus ada di allowlist (`ls`, `cat`, `tail`, `grep`, `df`, `free`,
+  `journalctl`, `systemctl status`, ... lihat `internal/docker/command.go`),
+  tanpa `> < | ; & $ \` ( ) { } \` dan newline, maksimum 300 karakter. Mode
+  berbahaya binary yang diizinkan ditolak (`find -exec/-delete`, `systemctl
+  restart`, `journalctl --vacuum`, `ip ... set`, `date -s`). Perintah
+  dibungkus `timeout -k 5 25` di server. Tidak ada `sudo`, `docker`, `env`,
+  maupun shell. Read-only tetap bisa membaca file sensitif, karena itu hanya
+  untuk SRE.
+- Setiap perintah SSH tercatat di log bot: `ssh_command user=... ok=...
+  command="..."`, dan yang ditolak `ssh_command_rejected user=... reason=...`.
+  Isi output tidak dicatat.
+- Semua output tool disaring `internal/redact` sebelum masuk LLM (dan Slack):
+  private key, password di URL, token AWS/Slack/GitHub/`sk-`, JWT, Bearer, dan
+  `*_PASSWORD=`/`*_TOKEN=`/`*_SECRET=`.
 - Log default 100 baris, maksimum 200 dan 32 KiB. Tidak ada follow log streaming.
   SSH memakai `session.CombinedOutput()`, lalu memotong hasil ke 32 KiB sebelum
   dikirim ke LLM. Seluruh output ditampung di memory sampai perintah selesai;

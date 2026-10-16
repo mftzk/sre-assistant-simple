@@ -102,6 +102,8 @@ func toolTitle(ev agent.ToolEvent) string {
 		return "Baca log " + target
 	case "docker_restart":
 		return "Restart " + target
+	case "ssh_command":
+		return "Jalankan perintah di server"
 	default:
 		return "Tool tidak dikenal"
 	}

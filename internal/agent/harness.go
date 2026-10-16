@@ -22,6 +22,7 @@ type Tools interface {
 	Execute(ctx context.Context, caller string, restartAllowed bool, call ToolCall) string
 	AllowedContainers() []string
 	CanRestart(caller, text string) bool
+	CanRunCommand(caller string) bool
 }
 
 // ToolEvent reports one tool call to the user interface: once when it starts
@@ -59,7 +60,7 @@ func (h *Harness) RunWithProgress(ctx context.Context, caller, text string, hist
 	// Step 1: permission is decided by code from the real Slack user ID and the
 	// current message, before the model sees anything.
 	canRestart := h.Docker.CanRestart(caller, text)
-	tools := toolSchemas(canRestart)
+	tools := toolSchemas(canRestart, h.Docker.CanRunCommand(caller))
 
 	// Step 2: build the conversation the model will see.
 	messages := []Message{{Role: "system", Content: systemPrompt(h.Docker.AllowedContainers())}}
@@ -175,7 +176,7 @@ func traceTool(call ToolCall, container, result string, duration time.Duration, 
 	}
 	tool := call.Function.Name
 	switch tool {
-	case "docker_list", "docker_inspect", "docker_logs", "docker_restart":
+	case "docker_list", "docker_inspect", "docker_logs", "docker_restart", "ssh_command":
 	default:
 		tool = "unknown"
 	}
